@@ -56,18 +56,19 @@ var templ = template.Must(template.New("mcbrain").Parse(mcTemplate))
 
 type twssMap map[string]int
 
-func getData() twssMap {
+func getData() (twssMap, error) {
+	data := twssMap{}
 	client, err := redis.Dial("tcp", "localhost:6379")
 	if err != nil {
-		log.Fatalf("Can't connect to redis!")
+		return nil, err
 	}
 
-	data := twssMap{}
+	defer client.Close()
 
 	keys := client.Cmd("HKEYS", store)
 	keyStr, err := keys.List()
 	if err != nil {
-		log.Fatalf("Can't make list: %v", err)
+		return nil, err
 	}
 
 	for key := range keyStr {
@@ -75,23 +76,37 @@ func getData() twssMap {
 		data[keyStr[key]], _ = v.Int()
 	}
 
-	return data
+	return data, nil
 }
 
 func brainDisplay(w http.ResponseWriter, req *http.Request) {
-	data := getData()
-	err := templ.Execute(w, data)
+	data, err := getData()
 	if err != nil {
-		log.Fatalf("template execution failed! %v", err)
+		log.Printf("Can't get data: %v", err)
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	err = templ.Execute(w, data)
+	if err != nil {
+		log.Printf("template execution failed! %v", err)
+		http.Error(w, err.Error(), 500)
+		return
 	}
 }
 
 func brainJSON(w http.ResponseWriter, req *http.Request) {
-	data := getData()
+	data, err := getData()
+	if err != nil {
+		log.Printf("can't get data: %v", err)
+		http.Error(w, err.Error(), 500)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(data); err != nil {
-		log.Fatalf("Ohgod!, %v", err)
+		log.Printf("Ohgod!, %v", err)
+		http.Error(w, err.Error(), 500)
+		return
 	}
 }
 
